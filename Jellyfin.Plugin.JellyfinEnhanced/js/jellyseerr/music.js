@@ -123,6 +123,58 @@
         return btn;
     }
 
+    /**
+     * The same small circular refresh control jellyseerr.js's
+     * createJellyseerrSection puts beside the movie/show "Discover on Seerr"
+     * heading -- same classes/icon/animation, so it looks and behaves
+     * identically. Clicking it dispatches 'je-music-manual-refresh', our own
+     * row's analogue of jellyseerr.js's 'jellyseerr-manual-refresh', rather
+     * than reusing that event name (the handler it triggers re-renders the
+     * movie row's .jellyseerr-section, not ours).
+     * @returns {HTMLButtonElement}
+     */
+    function buildRefreshButton() {
+        const refreshBtn = document.createElement('button');
+        refreshBtn.className = 'jellyseerr-refresh-btn';
+        refreshBtn.setAttribute('aria-label', t('music_refresh_button', 'Refresh'));
+        refreshBtn.title = t('music_refresh_button', 'Refresh');
+        refreshBtn.style.marginLeft = '0.5em';
+        refreshBtn.style.verticalAlign = 'middle';
+        refreshBtn.style.background = 'none';
+        refreshBtn.style.border = 'none';
+        refreshBtn.style.cursor = 'pointer';
+        refreshBtn.style.display = 'inline-flex';
+        refreshBtn.style.alignItems = 'center';
+        refreshBtn.style.justifyContent = 'center';
+        refreshBtn.style.padding = '0';
+        const icon = document.createElement('span');
+        icon.className = 'material-icons jellyseerr-refresh-icon';
+        icon.textContent = 'refresh';
+        icon.style.transition = 'transform 0.5s cubic-bezier(.4,2,.6,1)';
+        refreshBtn.appendChild(icon);
+        refreshBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            icon.style.transform = 'rotate(360deg)';
+            setTimeout(() => { icon.style.transform = ''; }, 500);
+            document.dispatchEvent(new CustomEvent('je-music-manual-refresh'));
+        });
+        // Same selectors/rules jellyseerr.js's section uses -- guarded by the
+        // same style id so whichever row (movies or music) renders first is
+        // the one that actually injects it; the second call is a no-op.
+        if (!document.getElementById('jellyseerr-refresh-style')) {
+            const style = document.createElement('style');
+            style.id = 'jellyseerr-refresh-style';
+            style.textContent = `
+                .jellyseerr-refresh-btn:focus { outline: none; }
+                .jellyseerr-refresh-icon { color: #fff; filter: opacity(0.6); }
+                .jellyseerr-refresh-btn:hover .jellyseerr-refresh-icon { color: #fff; filter: opacity(0.9); }
+            `;
+            document.head.appendChild(style);
+        }
+        return refreshBtn;
+    }
+
     function closeOverlay() {
         if (!overlay) return;
         overlay.classList.remove('show');
@@ -276,6 +328,221 @@
     }
 
     // ================================
+    // Artist "more info" modal
+    // ================================
+    // The movie/show "More Info" link opens JE.jellyseerrMoreInfo's modal --
+    // a full detail page (backdrop, poster, stats panel, cast/crew) built
+    // entirely around a TMDB id and TMDB-shaped data (seasons, ratings,
+    // credits). Its open()/showModal() reach into that module's own
+    // private `state`/`historyEntryActive` and call internal.renderActions,
+    // internal.fetchMediaDetails, etc. -- all TMDB-specific and not meant to
+    // be called with anything else, so there's no real "mechanism" there to
+    // reuse for an artist beyond its *markup*: the .je-more-info-modal shell
+    // and its CSS (more-info-modal-styles.js) make no assumption about what
+    // data fills it in. This reuses that shell/CSS verbatim -- same classes,
+    // same open/close choreography (backdrop click, Escape, X button, a
+    // history entry so Back closes it) -- with its own scoped state, same
+    // reasoning as the card hover mechanism above.
+    let artistModal = null;
+    let artistModalHistoryActive = false;
+    let artistModalPopPending = false;
+
+    function buildArtistModalContent(artist) {
+        const metaParts = [artist.type, artist.country, artist.disambiguation].filter(Boolean);
+        const backdropUrl = isSafeArtistImageUrl(artist.backgroundUrl) ? artist.backgroundUrl : '';
+        const posterUrl = isSafeArtistImageUrl(artist.imageUrl) ? artist.imageUrl : '';
+        const albums = artist.releaseGroups || [];
+
+        return `
+            <div class="modal-overlay">
+                <div class="modal-container">
+                    <button class="modal-refresh" aria-label="${t('music_refresh_button', 'Refresh')}" title="${t('music_refresh_button', 'Refresh status')}">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23 4 23 10 17 10"></polyline>
+                            <polyline points="1 20 1 14 7 14"></polyline>
+                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36M20.49 15a9 9 0 0 1-14.85 3.36"></path>
+                        </svg>
+                    </button>
+                    <button class="modal-close" aria-label="${t('music_close_button', 'Close')}">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+
+                    ${backdropUrl ? `
+                        <div class="modal-backdrop" style="background-image: url('${backdropUrl}');">
+                            <div class="je-modal-backdrop-overlay"></div>
+                        </div>
+                    ` : ''}
+
+                    <div class="modal-content">
+                        <div class="modal-main">
+                            <div class="modal-left">
+                                <div class="header-section">
+                                    <div class="header-poster">
+                                        ${posterUrl
+                                            ? `<img src="${posterUrl}" alt="${JE.escapeHtml(artist.name)}" />`
+                                            : `<div class="je-music-poster" style="width:100%;height:180px;border-radius:8px;">${MUSIC_ICON}</div>`}
+                                    </div>
+                                    <div class="header-info">
+                                        <div class="title-row">
+                                            <h1 class="title">${JE.escapeHtml(artist.name)}</h1>
+                                        </div>
+                                        <div class="meta-info">
+                                            ${metaParts.length
+                                                ? metaParts.map((part) => `<span>${JE.escapeHtml(part)}</span>`).join('')
+                                                : `<span>${t('music_card_overview', 'Discovered via MusicBrainz')}</span>`}
+                                        </div>
+                                        <div class="je-more-info-actions" data-mount="je-music-actions"></div>
+                                    </div>
+                                </div>
+
+                                ${albums.length ? `
+                                    <div class="cast-section">
+                                        <h3>${t('music_discography', 'Discography')}</h3>
+                                        <div class="cast-scroll">
+                                            ${albums.map((rg) => `
+                                                <div class="cast-member">
+                                                    <div class="person-avatar">${MUSIC_ICON}</div>
+                                                    <div class="person-name" title="${JE.escapeHtml(rg.title)}">${JE.escapeHtml(rg.title)}</div>
+                                                    <div class="person-character">${rg.firstReleaseDate ? JE.escapeHtml(rg.firstReleaseDate.slice(0, 4)) : ''}</div>
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                ` : ''}
+                            </div>
+
+                            <div class="modal-right">
+                                <div class="je-more-info-right-panel">
+                                    <div class="je-more-info-stats-panel">
+                                        ${artist.type ? `
+                                            <div class="je-more-info-stat-row">
+                                                <div class="je-more-info-stat-label">${t('music_stat_type', 'Type')}</div>
+                                                <div class="je-more-info-stat-value">${JE.escapeHtml(artist.type)}</div>
+                                            </div>
+                                        ` : ''}
+                                        ${artist.country ? `
+                                            <div class="je-more-info-stat-row">
+                                                <div class="je-more-info-stat-label">${t('music_stat_country', 'Country')}</div>
+                                                <div class="je-more-info-stat-value">${JE.escapeHtml(artist.country)}</div>
+                                            </div>
+                                        ` : ''}
+                                        ${albums.length ? `
+                                            <div class="je-more-info-stat-row">
+                                                <div class="je-more-info-stat-label">${t('music_stat_albums', 'Albums')}</div>
+                                                <div class="je-more-info-stat-value">${albums.length}</div>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    function renderArtistModalActions(modal, artist) {
+        const mount = modal.querySelector('[data-mount="je-music-actions"]');
+        if (!mount) return;
+        mount.innerHTML = '';
+        if (artist.canRequest) {
+            mount.appendChild(buildRequestButton(artist.mbid, { alreadyAdded: artist.alreadyAdded }));
+        } else {
+            const note = document.createElement('span');
+            note.className = 'je-more-info-stat-value';
+            note.textContent = t('music_no_lidarr', 'No Lidarr server is configured.');
+            mount.appendChild(note);
+        }
+    }
+
+    function closeArtistModal() {
+        artistModalHistoryActive = false;
+        artistModalPopPending = false;
+        if (!artistModal) return;
+        const closing = artistModal;
+        artistModal = null;
+        closing.classList.remove('active');
+        if (closing._jeCleanup) closing._jeCleanup();
+        setTimeout(() => closing.remove(), 300);
+    }
+
+    function dismissArtistModal() {
+        if (!artistModalHistoryActive) {
+            closeArtistModal();
+            return;
+        }
+        if (artistModalPopPending) return;
+        artistModalPopPending = true;
+        history.back();
+    }
+
+    window.addEventListener('popstate', () => {
+        if (!artistModalHistoryActive) return;
+        artistModalHistoryActive = false;
+        artistModalPopPending = false;
+        closeArtistModal();
+    });
+
+    async function openArtistModal(mbid) {
+        injectStyles();
+        const artist = await JE.jellyseerrAPI.fetchMusicArtist(mbid);
+        if (!artist) {
+            JE.toast?.(t('music_no_results', 'Could not load this artist.'), 3000);
+            return;
+        }
+
+        if (artistModal) closeArtistModal();
+
+        const modal = document.createElement('div');
+        modal.className = 'je-more-info-modal';
+        modal.innerHTML = buildArtistModalContent(artist);
+        document.body.appendChild(modal);
+        artistModal = modal;
+        renderArtistModalActions(modal, artist);
+
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal || e.target.classList.contains('modal-overlay')) {
+                dismissArtistModal();
+            }
+        });
+        modal.querySelector('.modal-close')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dismissArtistModal();
+        });
+        modal.querySelector('.modal-refresh')?.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const btn = e.currentTarget;
+            btn.classList.add('loading');
+            btn.disabled = true;
+            try {
+                const fresh = await JE.jellyseerrAPI.fetchMusicArtist(mbid);
+                if (artistModal !== modal) return; // closed/replaced while refreshing
+                if (fresh) renderArtistModalActions(modal, fresh);
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+        });
+
+        const handleEscape = (e) => { if (e.key === 'Escape') dismissArtistModal(); };
+        document.addEventListener('keydown', handleEscape);
+        modal._jeCleanup = () => document.removeEventListener('keydown', handleEscape);
+
+        if (!artistModalHistoryActive) {
+            history.pushState(null, '', location.href);
+            artistModalHistoryActive = true;
+        }
+
+        requestAnimationFrame(() => modal.classList.add('active'));
+    }
+
+    // ================================
     // Native search-page integration
     // ================================
     // Mirrors jellyseerr.js's "Discover on Seerr" row for movies/shows, but
@@ -362,7 +629,7 @@
         if (target.closest('.jellyseerr-more-info-link')) {
             e.preventDefault();
             e.stopPropagation();
-            openOverlay(state.artist.mbid);
+            openArtistModal(state.artist.mbid);
             return;
         }
         if (target.closest('.jellyseerr-poster-image') === state.imageContainer && !state.overview) {
@@ -465,6 +732,7 @@
         const title = document.createElement('h2');
         title.className = 'sectionTitle sectionTitle-cards focuscontainer-x padded-left padded-right';
         title.textContent = t('music_discover_title', 'Discover Music on Seerr');
+        title.appendChild(buildRefreshButton());
         section.appendChild(title);
 
         const scroller = document.createElement('div');
@@ -494,7 +762,7 @@
         (resultsContainer || searchPage).appendChild(section);
     }
 
-    function runSearchRow(query) {
+    function runSearchRow(query, { skipCache = false } = {}) {
         if (searchRowAbort) searchRowAbort.abort();
 
         if (!query) {
@@ -505,7 +773,7 @@
         searchRowAbort = new AbortController();
         const { signal } = searchRowAbort;
 
-        JE.jellyseerrAPI.musicSearch(query, { signal }).then((data) => {
+        JE.jellyseerrAPI.musicSearch(query, { signal, skipCache }).then((data) => {
             if (signal.aborted) return;
             renderSearchRowSection(data?.results || []);
         }).catch((error) => {
@@ -535,6 +803,20 @@
         }
     }
 
+    // Mirrors jellyseerr.js's own 'jellyseerr-manual-refresh' listener
+    // (manualRefreshJellyseerrData), scoped to our row: re-run the row's
+    // current query bypassing the cache instead of touching .jellyseerr-section.
+    let manualRefreshListenerAttached = false;
+    function attachManualRefreshListener() {
+        if (manualRefreshListenerAttached) return;
+        manualRefreshListenerAttached = true;
+        document.addEventListener('je-music-manual-refresh', () => {
+            const input = document.querySelector('#searchPage #searchTextInput');
+            const query = (input?.value || '').trim();
+            if (query) runSearchRow(query, { skipCache: true });
+        });
+    }
+
     /**
      * Wires up the "Discover Music on Seerr" row on Jellyfin's native search
      * page, alongside its existing movies/shows row. Safe to call once at
@@ -545,6 +827,7 @@
         if (!JE.jellyseerrAPI?.musicSearch) return;
 
         attachNativeSearchListener();
+        attachManualRefreshListener();
         JE.core.dom.onBodyMutation('je-music-search-attach', () => {
             attachNativeSearchListener();
             cleanupIfSearchPageGone();
