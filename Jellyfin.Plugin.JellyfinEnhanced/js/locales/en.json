@@ -659,6 +659,7 @@
     "music_request_error": "Something went wrong requesting this artist.",
     "music_discover_title": "Discover Music on Seerr",
     "music_card_overview": "Discovered via MusicBrainz",
+    "music_card_badge": "Music",
     "music_refresh_button": "Refresh",
     "music_close_button": "Close",
     "music_discography": "Discography",

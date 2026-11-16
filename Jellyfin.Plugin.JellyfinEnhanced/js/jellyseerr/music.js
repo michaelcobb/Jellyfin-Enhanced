@@ -77,6 +77,9 @@
                its own rule here. */
             .je-music-poster { display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #312e81, #7c3aed); color: rgba(255, 255, 255, 0.85); }
             .je-music-poster > svg { width: 40%; height: 40%; }
+            /* Same .jellyseerr-media-badge chip ui-badges.js puts on movie/show
+               posters (addMediaTypeBadge) -- only the colour is music-specific. */
+            .jellyseerr-media-badge-music { background-color: #7c3aed; }
         `;
         document.head.appendChild(style);
     }
@@ -625,16 +628,29 @@
         if (!hit) return;
         const { state, target } = hit;
         if (target.closest('.jellyseerr-request-button')) return; // its own listener handles this
-        if (target.closest('.jellyseerr-overview')) return; // background of the open overview: no-op
+        if (target.closest('.jellyseerr-overview')) {
+            // Background of the open overview (not the button): mirrors
+            // ui-cards.js's onOverviewClick, whose click-through on the
+            // overview area opens the detail modal.
+            e.preventDefault();
+            e.stopPropagation();
+            openArtistModal(state.artist.mbid);
+            return;
+        }
         if (target.closest('.jellyseerr-more-info-link')) {
             e.preventDefault();
             e.stopPropagation();
             openArtistModal(state.artist.mbid);
             return;
         }
-        if (target.closest('.jellyseerr-poster-image') === state.imageContainer && !state.overview) {
+        if (target.closest('.jellyseerr-poster-image') === state.imageContainer) {
+            // Mirrors ui-cards.js's onPosterClick: show the overview (so a
+            // keyboard/touch user still sees the Request button if the modal
+            // is dismissed) and open the detail modal, same as a movie poster.
             e.preventDefault();
-            createCardOverview(state);
+            e.stopPropagation();
+            if (!state.overview) createCardOverview(state);
+            openArtistModal(state.artist.mbid);
         }
     }
 
@@ -698,6 +714,7 @@
                     <div class="cardPadder cardPadder-overflowPortrait"></div>
                     <div class="cardImageContainer coveredImage cardContent jellyseerr-poster-image${hasImage ? '' : ' je-music-poster'} focusable" style="cursor: pointer;${hasImage ? ` background-image: url('${artist.imageUrl}');` : ''}" tabindex="0">
                         ${hasImage ? '' : MUSIC_ICON}
+                        <div class="jellyseerr-media-badge jellyseerr-media-badge-music">${JE.escapeHtml(t('music_card_badge', 'Music'))}</div>
                     </div>
                     <div class="cardOverlayContainer" style="pointer-events: none;"></div>
                 </div>
