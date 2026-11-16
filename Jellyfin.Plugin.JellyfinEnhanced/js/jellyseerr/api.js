@@ -317,7 +317,7 @@
      * Searches MusicBrainz (via the Seerr music patch) for artists.
      * @param {string} query
      * @param {object} [options] - Optional settings (signal, skipCache).
-     * @returns {Promise<{results: Array<{mbid:string,name:string,type?:string,disambiguation?:string,country?:string,imageUrl?:string}>}>}
+     * @returns {Promise<{results: Array<{mbid:string,name:string,type?:string,disambiguation?:string,country?:string,imageUrl?:string,beginYear?:string}>}>}
      */
     api.musicSearch = async function(query, options = {}) {
         try {

@@ -437,6 +437,12 @@
                                                 <div class="je-more-info-stat-value">${JE.escapeHtml(artist.country)}</div>
                                             </div>
                                         ` : ''}
+                                        ${artist.beginYear ? `
+                                            <div class="je-more-info-stat-row">
+                                                <div class="je-more-info-stat-label">${t('music_stat_formed', 'Formed')}</div>
+                                                <div class="je-more-info-stat-value">${JE.escapeHtml(artist.beginYear)}${artist.endYear ? ` – ${JE.escapeHtml(artist.endYear)}` : ''}</div>
+                                            </div>
+                                        ` : ''}
                                         ${albums.length ? `
                                             <div class="je-more-info-stat-row">
                                                 <div class="je-more-info-stat-label">${t('music_stat_albums', 'Albums')}</div>
@@ -713,6 +719,14 @@
         card.className = 'card overflowPortraitCard card-hoverable card-withuserdata jellyseerr-card';
         card.setAttribute('data-mbid', artist.mbid);
         const posterUrl = isSafeArtistImageUrl(artist.imageUrl) ? artist.imageUrl : noPosterUrl();
+        // Same meta row shape ui-cards.js's getCardTemplate uses for movie/show
+        // cards (Seerr icon + year + star rating) rather than our own
+        // type/country line, so the two rows read consistently. MusicBrainz
+        // has no numeric rating, so that slot is always "N/A"; the year is
+        // the artist's formation year (life-span.begin) when Seerr returns one.
+        const year = artist.beginYear || t('music_meta_na', 'N/A');
+        const rating = t('music_meta_na', 'N/A');
+        const icons = JE.jellyseerrUI?.icons || {};
         card.innerHTML = `
             <div class="cardBox cardBox-bottompadded">
                 <div class="cardScalable">
@@ -726,7 +740,9 @@
                     <a is="emby-linkbutton" href="#" class="jellyseerr-more-info-link"><bdi>${JE.escapeHtml(artist.name)}</bdi></a>
                 </div>
                 <div class="cardText cardTextCentered cardText-secondary jellyseerr-meta">
-                    <bdi>${JE.escapeHtml([artist.type, artist.country].filter(Boolean).join(' · '))}</bdi>
+                    <img class="jellyseerr-icon-on-card" src="${JE.cdn.selfhst('svg/seerr.svg')}" alt="Seerr">
+                    <bdi>${JE.escapeHtml(year)}</bdi>
+                    <div class="jellyseerr-rating">${icons.star || ''}<span>${JE.escapeHtml(rating)}</span></div>
                 </div>
             </div>
         `;
