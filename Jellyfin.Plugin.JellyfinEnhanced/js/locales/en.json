@@ -667,6 +667,7 @@
     "music_stat_type": "Type",
     "music_stat_country": "Country",
     "music_stat_formed": "Formed",
+    "music_stat_rating": "Rating",
     "music_stat_albums": "Albums",
     "header_random_item": "Random item",
     "header_more_actions": "More from Jellyfin Enhanced",

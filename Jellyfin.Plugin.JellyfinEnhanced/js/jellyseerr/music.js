@@ -364,6 +364,11 @@
         const backdropUrl = isSafeArtistImageUrl(artist.backgroundUrl) ? artist.backgroundUrl : '';
         const posterUrl = isSafeArtistImageUrl(artist.imageUrl) ? artist.imageUrl : noPosterUrl();
         const albums = artist.releaseGroups || [];
+        const icons = JE.jellyseerrUI?.icons || {};
+        // MusicBrainz's own community rating (0-5), only ever available from
+        // this single-artist lookup -- never from search -- and sparse (most
+        // artists have no votes), unlike a movie's TMDB score.
+        const hasRating = typeof artist.rating === 'number';
 
         return `
             <div class="modal-overlay">
@@ -425,6 +430,12 @@
                             <div class="modal-right">
                                 <div class="je-more-info-right-panel">
                                     <div class="je-more-info-stats-panel">
+                                        ${hasRating ? `
+                                            <div class="je-more-info-stat-row">
+                                                <div class="je-more-info-stat-label">${t('music_stat_rating', 'Rating')}</div>
+                                                <div class="je-more-info-stat-value">${icons.star || ''} ${artist.rating.toFixed(1)} / 5${artist.ratingVotes ? ` (${artist.ratingVotes})` : ''}</div>
+                                            </div>
+                                        ` : ''}
                                         ${artist.type ? `
                                             <div class="je-more-info-stat-row">
                                                 <div class="je-more-info-stat-label">${t('music_stat_type', 'Type')}</div>
