@@ -1,0 +1,114 @@
+name: Build & publish music-discovery plugin release
+
+# This fork carries music discovery (an artist search row + detail modal +
+# Lidarr requesting, mirroring the movie/show Seerr integration) on top of
+# upstream Jellyfin Enhanced. It has no upstream release pipeline of its own
+# to piggyback on for this branch, so this workflow builds the plugin,
+# attaches it to a GitHub Release on this fork, and republishes this repo's
+# manifest.json with an entry pointing at that release -- so a friend can add
+# this repo's raw manifest.json URL as a Jellyfin plugin repository and
+# install/update through the normal Dashboard -> Plugins UI, with no cloning
+# or building on their end.
+#
+# Only builds the Jellyfin 12 / .NET 10 target (JellyfinTarget=jf12). Add a
+# jf10 (Jellyfin 10.11 / .NET 9) build + a second manifest entry the same way
+# if you ever need to support an older Jellyfin server too.
+
+on:
+  push:
+    branches: [ "feature/music-discovery" ]
+    paths-ignore:
+      - 'manifest.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.x
+
+      - name: Compute build version
+        id: ver
+        run: echo "version=12.16.0.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build plugin (Jellyfin 12 / net10.0)
+        run: |
+          JellyfinTarget=jf12 dotnet publish Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj \
+            -c Release -o out \
+            -p:AssemblyVersion=${{ steps.ver.outputs.version }} \
+            -p:FileVersion=${{ steps.ver.outputs.version }}
+
+      - name: Package zip
+        run: |
+          cd out
+          zip -j ../Jellyfin.Plugin.JellyfinEnhanced_music-discovery.zip \
+            Jellyfin.Plugin.JellyfinEnhanced.dll \
+            Jellyfin.Plugin.JellyfinEnhanced.pdb \
+            Jellyfin.Plugin.JellyfinEnhanced.deps.json
+
+      - name: Checksum
+        id: sum
+        run: |
+          SUM=$(md5sum Jellyfin.Plugin.JellyfinEnhanced_music-discovery.zip | cut -d' ' -f1 | tr 'a-z' 'A-Z')
+          echo "checksum=$SUM" >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: music-discovery-${{ steps.ver.outputs.version }}
+          name: Music discovery build ${{ steps.ver.outputs.version }}
+          body: Automated build of the feature/music-discovery branch (artist search, detail modal, Lidarr requesting).
+          files: Jellyfin.Plugin.JellyfinEnhanced_music-discovery.zip
+
+      - name: Update manifest.json
+        env:
+          BUILD_VERSION: ${{ steps.ver.outputs.version }}
+          CHECKSUM: ${{ steps.sum.outputs.checksum }}
+          SOURCE_URL: https://github.com/${{ github.repository }}/releases/download/music-discovery-${{ steps.ver.outputs.version }}/Jellyfin.Plugin.JellyfinEnhanced_music-discovery.zip
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, datetime
+
+          with open('manifest.json') as f:
+              data = json.load(f)
+
+          entry = {
+              "changelog": "Custom build with music discovery added to the Seerr integration: artist search, a detail modal, and one-click Lidarr requesting.",
+              "targetAbi": "12.0.0.0",
+              "version": os.environ["BUILD_VERSION"],
+              "sourceUrl": os.environ["SOURCE_URL"],
+              "checksum": os.environ["CHECKSUM"],
+              "timestamp": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
+          }
+
+          data[0]["versions"].insert(0, entry)
+
+          with open('manifest.json', 'w') as f:
+              json.dump(data, f, indent=2)
+              f.write("\n")
+          PYEOF
+
+      - name: Commit manifest.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          git commit -m "chore(manifest): publish music-discovery build ${{ steps.ver.outputs.version }} [skip ci]" || exit 0
+          git push
