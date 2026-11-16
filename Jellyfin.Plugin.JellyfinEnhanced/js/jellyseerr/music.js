@@ -53,6 +53,9 @@
             .je-music-album { background: rgba(30, 41, 59, 0.6); border-radius: 8px; padding: 10px 12px; }
             .je-music-album-title { font-weight: 600; display: block; }
             .je-music-album-year { color: #94a3b8; font-size: 0.8rem; }
+            .je-music-search-card { background: none; border: none; padding: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+            .je-music-card-image { display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #312e81, #7c3aed); color: rgba(255, 255, 255, 0.85); }
+            .je-music-card-image svg { width: 40%; height: 40%; }
         `;
         document.head.appendChild(style);
     }
@@ -161,8 +164,20 @@
         }
     }
 
-    function openOverlay() {
-        if (overlay) return;
+    /**
+     * Opens the music overlay. With an mbid, jumps straight to that artist's
+     * detail view instead of the search box -- used by the native
+     * search-page row below, where the user already picked an artist.
+     * @param {string} [initialMbid]
+     */
+    function openOverlay(initialMbid) {
+        if (overlay) {
+            if (initialMbid) {
+                const body = overlay.querySelector('.je-music-body');
+                if (body) renderArtistView(body, initialMbid);
+            }
+            return;
+        }
         injectStyles();
 
         overlay = document.createElement('div');
@@ -194,8 +209,150 @@
             searchDebounce = setTimeout(() => renderSearchView(body, input.value.trim()), 400);
         });
 
-        renderSearchView(body, '');
+        if (initialMbid) {
+            renderArtistView(body, initialMbid);
+        } else {
+            renderSearchView(body, '');
+        }
     }
+
+    // ================================
+    // Native search-page integration
+    // ================================
+    // Mirrors jellyseerr.js's "Discover on Seerr" row for movies/shows, but
+    // deliberately much simpler: no infinite scroll, pagination, or
+    // collection lookups. MusicBrainz's first page of artist matches is
+    // already a short, ranked list -- plenty for one horizontal row. Clicking
+    // a card opens the overlay above straight to that artist, reusing all of
+    // its request logic rather than duplicating it inline in the row.
+    const SEARCH_SECTION_ID = 'je-music-search-section';
+    let searchRowDebounce = null;
+    let searchRowAbort = null;
+
+    function removeSearchRowSection() {
+        document.getElementById(SEARCH_SECTION_ID)?.remove();
+    }
+
+    function buildSearchRowCard(artist) {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'card overflowPortraitCard card-hoverable je-music-search-card';
+        card.setAttribute('data-mbid', artist.mbid);
+        card.innerHTML = `
+            <div class="cardBox cardBox-bottompadded">
+                <div class="cardScalable">
+                    <div class="cardPadder cardPadder-overflowPortrait"></div>
+                    <div class="cardImageContainer je-music-card-image cardContent focusable" tabindex="-1">${MUSIC_ICON}</div>
+                </div>
+                <div class="cardText cardTextCentered cardText-first">${JE.escapeHtml(artist.name)}</div>
+                <div class="cardText cardTextCentered cardText-secondary">${JE.escapeHtml([artist.type, artist.country].filter(Boolean).join(' · '))}</div>
+            </div>
+        `;
+        card.addEventListener('click', () => openOverlay(artist.mbid));
+        return card;
+    }
+
+    function renderSearchRowSection(results) {
+        removeSearchRowSection();
+        if (!results.length) return;
+        injectStyles();
+
+        const searchPage = document.querySelector('#searchPage:not(.hide)');
+        if (!searchPage) return;
+
+        const section = document.createElement('div');
+        section.id = SEARCH_SECTION_ID;
+        section.className = 'verticalSection emby-scroller-container je-music-search-section';
+
+        const title = document.createElement('h2');
+        title.className = 'sectionTitle sectionTitle-cards focuscontainer-x padded-left padded-right';
+        title.textContent = t('music_discover_title', 'Discover Music on Seerr');
+        section.appendChild(title);
+
+        const scroller = document.createElement('div');
+        scroller.setAttribute('is', 'emby-scroller');
+        scroller.className = 'padded-top-focusscale padded-bottom-focusscale emby-scroller';
+        scroller.dataset.horizontal = 'true';
+        scroller.dataset.centerfocus = 'card';
+
+        const itemsContainer = document.createElement('div');
+        itemsContainer.setAttribute('is', 'emby-itemscontainer');
+        itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider';
+        results.forEach((artist) => itemsContainer.appendChild(buildSearchRowCard(artist)));
+        scroller.appendChild(itemsContainer);
+        section.appendChild(scroller);
+
+        // Good-enough placement: right after the movies/shows "Discover on
+        // Seerr" section when it's there, otherwise at the end of the
+        // results. Fighting Jellyfin's own React re-renders for exact
+        // ordering against its native People/Studios rows isn't worth it.
+        const jellyseerrSection = searchPage.querySelector('.jellyseerr-section');
+        if (jellyseerrSection) {
+            jellyseerrSection.after(section);
+            return;
+        }
+        const resultsContainer = searchPage.querySelector('.searchResults, [class*="searchResults"], .padded-top.padded-bottom-page');
+        (resultsContainer || searchPage).appendChild(section);
+    }
+
+    function runSearchRow(query) {
+        if (searchRowAbort) searchRowAbort.abort();
+
+        if (!query) {
+            removeSearchRowSection();
+            return;
+        }
+
+        searchRowAbort = new AbortController();
+        const { signal } = searchRowAbort;
+
+        JE.jellyseerrAPI.musicSearch(query, { signal }).then((data) => {
+            if (signal.aborted) return;
+            renderSearchRowSection(data?.results || []);
+        }).catch((error) => {
+            if (error?.name === 'AbortError') return;
+            console.error('🪼 Jellyfin Enhanced: Music: search-row failed:', error);
+            removeSearchRowSection();
+        });
+    }
+
+    function handleNativeSearchInput(event) {
+        const query = (event.target.value || '').trim();
+        clearTimeout(searchRowDebounce);
+        searchRowDebounce = setTimeout(() => runSearchRow(query), 400);
+    }
+
+    function attachNativeSearchListener() {
+        const input = document.querySelector('#searchPage #searchTextInput');
+        if (!input || input.dataset.jeMusicAttached) return;
+        input.dataset.jeMusicAttached = 'true';
+        input.addEventListener('input', handleNativeSearchInput);
+        if (input.value.trim()) runSearchRow(input.value.trim());
+    }
+
+    function cleanupIfSearchPageGone() {
+        if (!document.querySelector('#searchPage:not(.hide) #searchTextInput')) {
+            removeSearchRowSection();
+        }
+    }
+
+    /**
+     * Wires up the "Discover Music on Seerr" row on Jellyfin's native search
+     * page, alongside its existing movies/shows row. Safe to call once at
+     * startup; re-attaches itself across SPA navigation.
+     */
+    JE.initializeMusicSearchSection = function() {
+        if (!JE.pluginConfig?.JellyseerrEnabled) return;
+        if (!JE.jellyseerrAPI?.musicSearch) return;
+
+        attachNativeSearchListener();
+        JE.core.dom.onBodyMutation('je-music-search-attach', () => {
+            attachNativeSearchListener();
+            cleanupIfSearchPageGone();
+        });
+        window.addEventListener('popstate', cleanupIfSearchPageGone);
+        window.addEventListener('hashchange', cleanupIfSearchPageGone);
+    };
 
     /**
      * Creates and injects the "Music" header button if the Seerr integration
@@ -221,7 +378,7 @@
         musicButton.className = 'headerButton headerButtonRight paper-icon-button-light';
         musicButton.title = t('music_button_tooltip', 'Search and request music');
         musicButton.innerHTML = MUSIC_ICON;
-        musicButton.addEventListener('click', openOverlay);
+        musicButton.addEventListener('click', () => openOverlay());
 
         buttonContainer.appendChild(musicButton);
         headerRight.prepend(buttonContainer);

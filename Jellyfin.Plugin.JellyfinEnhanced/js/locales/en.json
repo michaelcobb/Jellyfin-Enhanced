@@ -657,6 +657,7 @@
     "music_no_lidarr": "No Lidarr server is configured.",
     "music_request_success": "Artist requested!",
     "music_request_error": "Something went wrong requesting this artist.",
+    "music_discover_title": "Discover Music on Seerr",
     "header_random_item": "Random item",
     "header_more_actions": "More from Jellyfin Enhanced",
     "header_more_title": "More from JE",
