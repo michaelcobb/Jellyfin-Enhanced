@@ -33,6 +33,15 @@
         return typeof url === 'string' && /^https:\/\/[^\s"'()]+$/.test(url);
     }
 
+    // The same "POSTER NOT FOUND" placeholder ui-cards.js falls back to for a
+    // movie/show with no TMDB poster (ctx.posterNotFoundUrl), proxied through
+    // the plugin's own CDN cache. Called lazily -- JE.cdn is set up by
+    // plugin.js before any card renders, but not necessarily before this
+    // file is first parsed.
+    function noPosterUrl() {
+        return JE.cdn?.url?.('ibb', 'fdbkXQdP/jellyseerr-poster-not-found.png') || '';
+    }
+
     function injectStyles() {
         if (document.getElementById(STYLE_ID) || !document.head) return;
         const style = document.createElement('style');
@@ -72,12 +81,12 @@
             /* Search-row cards reuse jellyseerr's own .jellyseerr-card /
                .jellyseerr-overview classes (ui-styles.js) so the hover
                mechanism, transitions and request-button styling are the
-               exact ones movie/show cards use -- not a parallel copy. Only
-               the poster's placeholder art (we have no artist photo) needs
-               its own rule here. */
-            .je-music-poster { display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #312e81, #7c3aed); color: rgba(255, 255, 255, 0.85); }
-            .je-music-poster > svg { width: 40%; height: 40%; }
-            /* Same .jellyseerr-media-badge chip ui-badges.js puts on movie/show
+               exact ones movie/show cards use -- not a parallel copy. A
+               missing artist photo falls back to the same "POSTER NOT
+               FOUND" placeholder (noPosterUrl()) ui-cards.js uses for a
+               movie/show with no TMDB poster, so no placeholder art of our
+               own is needed here.
+               Same .jellyseerr-media-badge chip ui-badges.js puts on movie/show
                posters (addMediaTypeBadge) -- only the colour is music-specific. */
             .jellyseerr-media-badge-music { background-color: #7c3aed; }
         `;
@@ -353,7 +362,7 @@
     function buildArtistModalContent(artist) {
         const metaParts = [artist.type, artist.country, artist.disambiguation].filter(Boolean);
         const backdropUrl = isSafeArtistImageUrl(artist.backgroundUrl) ? artist.backgroundUrl : '';
-        const posterUrl = isSafeArtistImageUrl(artist.imageUrl) ? artist.imageUrl : '';
+        const posterUrl = isSafeArtistImageUrl(artist.imageUrl) ? artist.imageUrl : noPosterUrl();
         const albums = artist.releaseGroups || [];
 
         return `
@@ -382,9 +391,7 @@
                             <div class="modal-left">
                                 <div class="header-section">
                                     <div class="header-poster">
-                                        ${posterUrl
-                                            ? `<img src="${posterUrl}" alt="${JE.escapeHtml(artist.name)}" />`
-                                            : `<div class="je-music-poster" style="width:100%;height:180px;border-radius:8px;">${MUSIC_ICON}</div>`}
+                                        <img src="${posterUrl}" alt="${JE.escapeHtml(artist.name)}" />
                                     </div>
                                     <div class="header-info">
                                         <div class="title-row">
@@ -705,13 +712,12 @@
         const card = document.createElement('div');
         card.className = 'card overflowPortraitCard card-hoverable card-withuserdata jellyseerr-card';
         card.setAttribute('data-mbid', artist.mbid);
-        const hasImage = isSafeArtistImageUrl(artist.imageUrl);
+        const posterUrl = isSafeArtistImageUrl(artist.imageUrl) ? artist.imageUrl : noPosterUrl();
         card.innerHTML = `
             <div class="cardBox cardBox-bottompadded">
                 <div class="cardScalable">
                     <div class="cardPadder cardPadder-overflowPortrait"></div>
-                    <div class="cardImageContainer coveredImage cardContent jellyseerr-poster-image${hasImage ? '' : ' je-music-poster'} focusable" style="cursor: pointer;${hasImage ? ` background-image: url('${artist.imageUrl}');` : ''}" tabindex="0">
-                        ${hasImage ? '' : MUSIC_ICON}
+                    <div class="cardImageContainer coveredImage cardContent jellyseerr-poster-image focusable" style="cursor: pointer; background-image: url('${posterUrl}');" tabindex="0">
                         <div class="jellyseerr-media-badge jellyseerr-media-badge-music">${JE.escapeHtml(t('music_card_badge', 'Music'))}</div>
                     </div>
                     <div class="cardOverlayContainer" style="pointer-events: none;"></div>
