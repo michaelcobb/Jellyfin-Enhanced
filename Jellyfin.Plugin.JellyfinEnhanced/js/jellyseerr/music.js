@@ -53,17 +53,14 @@
             .je-music-album { background: rgba(30, 41, 59, 0.6); border-radius: 8px; padding: 10px 12px; }
             .je-music-album-title { font-weight: 600; display: block; }
             .je-music-album-year { color: #94a3b8; font-size: 0.8rem; }
-            .je-music-search-card { background: none; border: none; padding: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
-            .je-music-card-image { position: relative; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #312e81, #7c3aed); color: rgba(255, 255, 255, 0.85); }
-            .je-music-card-image > svg { width: 40%; height: 40%; }
-            .je-music-card-overlay { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 10px; background: linear-gradient(180deg, rgba(0,0,0,0) 40%, rgba(0,0,0,.8) 100%); opacity: 0; pointer-events: none; transition: opacity .18s ease; }
-            .je-music-search-card .cardScalable:focus-within .je-music-card-overlay { opacity: 1; pointer-events: auto; }
-            @media (hover: hover) {
-                .je-music-search-card .cardScalable:hover .je-music-card-overlay { opacity: 1; pointer-events: auto; }
-            }
-            /* Touch devices have no hover: tapping the card opens the full
-               overlay instead (see buildSearchRowCard), where Request is
-               still one tap away. */
+            /* Search-row cards reuse jellyseerr's own .jellyseerr-card /
+               .jellyseerr-overview classes (ui-styles.js) so the hover
+               mechanism, transitions and request-button styling are the
+               exact ones movie/show cards use -- not a parallel copy. Only
+               the poster's placeholder art (we have no artist photo) needs
+               its own rule here. */
+            .je-music-poster { display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #312e81, #7c3aed); color: rgba(255, 255, 255, 0.85); }
+            .je-music-poster > svg { width: 40%; height: 40%; }
         `;
         document.head.appendChild(style);
     }
@@ -263,53 +260,162 @@
     let searchRowAbort = null;
 
     function removeSearchRowSection() {
-        document.getElementById(SEARCH_SECTION_ID)?.remove();
+        const section = document.getElementById(SEARCH_SECTION_ID);
+        if (!section) return;
+        // Drop state for the cards leaving the DOM (musicCardStates is a
+        // plain Map, not a WeakMap, since it's read from delegated listeners
+        // that need to look cards up by element).
+        section.querySelectorAll('.jellyseerr-card').forEach((card) => musicCardStates.delete(card));
+        section.remove();
     }
 
+    // ---- Card hover-to-request, the same mechanism ui-cards.js uses for
+    // movie/show cards -----------------------------------------------------
+    // Reviewed ui-cards.js: the Request button that appears on hover is NOT
+    // a pre-built overlay whose opacity CSS toggles. `.jellyseerr-overview`
+    // is always `opacity:1; pointer-events:auto` -- the overview element
+    // itself doesn't exist in the DOM until createOverview() builds and
+    // appends it (to .cardScalable) on mouseenter/focus/tap, and
+    // removeOverview() deletes it again on mouseleave. The is-touch/
+    // focus-within/hover CSS rules in ui-styles.js are vestigial for that
+    // reason. Listeners are bound once per container (not per card), via
+    // capture-phase mouseenter/mouseleave (they don't bubble) plus click/
+    // keydown/touch. This mirrors that exactly, scoped to our own search
+    // row and its own state, instead of hooking into ui-cards.js's private
+    // cardStates/container set.
+    const musicCardStates = new Map();
+    const boundMusicContainers = new WeakSet();
+
+    function createCardOverview(state) {
+        const overview = document.createElement('div');
+        overview.className = 'jellyseerr-overview';
+        overview.style.cursor = 'default';
+        overview.innerHTML = `<div class="content">${JE.escapeHtml([state.artist.type, state.artist.country].filter(Boolean).join(' · ') || t('music_card_overview', 'Discovered via MusicBrainz'))}</div>`;
+        state.overview = overview;
+        state.cardScalable.appendChild(overview);
+        state.button = buildRequestButton(state.artist.mbid);
+        overview.appendChild(state.button);
+    }
+
+    function removeCardOverview(state) {
+        if (state.overview?.parentNode) state.overview.parentNode.removeChild(state.overview);
+        state.overview = null;
+        state.button = null;
+    }
+
+    function musicCardEventTarget(container, e) {
+        const target = e.target;
+        if (!(target instanceof Element)) return null;
+        const card = target.closest('.jellyseerr-card');
+        if (!card || card.parentElement !== container) return null;
+        const state = musicCardStates.get(card);
+        return state ? { card, state, target } : null;
+    }
+
+    function onMusicCardHoverBoundary(container, e, entering) {
+        const target = e.target;
+        if (!(target instanceof Element) || !target.classList.contains('cardScalable')) return;
+        const hit = musicCardEventTarget(container, e);
+        if (!hit || target !== hit.state.cardScalable) return;
+        if (entering) {
+            if (!hit.state.overview) createCardOverview(hit.state);
+        } else {
+            removeCardOverview(hit.state);
+        }
+    }
+
+    function onMusicCardClick(container, e) {
+        const hit = musicCardEventTarget(container, e);
+        if (!hit) return;
+        const { state, target } = hit;
+        if (target.closest('.jellyseerr-request-button')) return; // its own listener handles this
+        if (target.closest('.jellyseerr-overview')) return; // background of the open overview: no-op
+        if (target.closest('.jellyseerr-more-info-link')) {
+            e.preventDefault();
+            e.stopPropagation();
+            openOverlay(state.artist.mbid);
+            return;
+        }
+        if (target.closest('.jellyseerr-poster-image') === state.imageContainer && !state.overview) {
+            e.preventDefault();
+            createCardOverview(state);
+        }
+    }
+
+    function onMusicCardKeydown(container, e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        const hit = musicCardEventTarget(container, e);
+        if (!hit || hit.target.closest('.jellyseerr-poster-image') !== hit.state.imageContainer) return;
+        e.preventDefault();
+        if (!hit.state.overview) createCardOverview(hit.state);
+        else removeCardOverview(hit.state);
+    }
+
+    function addDelegatedTapListener(container, onTap) {
+        let startX = 0, startY = 0, moved = false;
+        container.addEventListener('touchstart', (e) => {
+            const t0 = e.touches[0];
+            startX = t0.clientX; startY = t0.clientY; moved = false;
+        }, { passive: true });
+        container.addEventListener('touchmove', (e) => {
+            const t0 = e.touches[0];
+            if (Math.abs(t0.clientX - startX) > 10 || Math.abs(t0.clientY - startY) > 10) moved = true;
+        }, { passive: true });
+        container.addEventListener('touchend', (e) => {
+            if (moved) return;
+            const hit = musicCardEventTarget(container, e);
+            if (hit && hit.target.closest('.jellyseerr-poster-image') === hit.state.imageContainer) onTap(hit.state);
+        }, { passive: true });
+    }
+
+    function bindMusicCardContainer(container) {
+        if (boundMusicContainers.has(container)) return;
+        boundMusicContainers.add(container);
+        container.addEventListener('click', (e) => onMusicCardClick(container, e));
+        container.addEventListener('keydown', (e) => onMusicCardKeydown(container, e));
+        container.addEventListener('mouseenter', (e) => onMusicCardHoverBoundary(container, e, true), true);
+        container.addEventListener('mouseleave', (e) => onMusicCardHoverBoundary(container, e, false), true);
+        addDelegatedTapListener(container, (state) => {
+            if (!state.overview) createCardOverview(state);
+        });
+    }
+
+    /**
+     * Builds a search-row card with the exact markup/classes
+     * createJellyseerrCard uses for movie/show cards (.jellyseerr-card,
+     * .cardScalable, .cardImageContainer.jellyseerr-poster-image,
+     * .cardOverlayContainer, .jellyseerr-more-info-link) so the shared
+     * hover-to-request mechanism above and all of ui-styles.js's card CSS
+     * apply unmodified. Only the poster art (an icon instead of a photo)
+     * is music-specific.
+     * @param {Object} artist
+     * @returns {HTMLElement}
+     */
     function buildSearchRowCard(artist) {
-        // A div, not a button: it contains a real <button> (the request
-        // button below), and a button cannot contain interactive content --
-        // nesting one would make the browser's parser close this element
-        // early and mangle the card's DOM. tabindex makes it focusable for
-        // keyboard/:focus-within in place of the native button behavior.
         const card = document.createElement('div');
-        card.setAttribute('role', 'button');
-        card.setAttribute('tabindex', '0');
-        card.className = 'card overflowPortraitCard card-hoverable je-music-search-card';
+        card.className = 'card overflowPortraitCard card-hoverable card-withuserdata jellyseerr-card';
         card.setAttribute('data-mbid', artist.mbid);
         card.innerHTML = `
             <div class="cardBox cardBox-bottompadded">
                 <div class="cardScalable">
                     <div class="cardPadder cardPadder-overflowPortrait"></div>
-                    <div class="cardImageContainer je-music-card-image cardContent focusable" tabindex="-1">
+                    <div class="cardImageContainer coveredImage cardContent jellyseerr-poster-image je-music-poster focusable" style="cursor: pointer;" tabindex="0">
                         ${MUSIC_ICON}
-                        <div class="je-music-card-overlay"></div>
                     </div>
+                    <div class="cardOverlayContainer" style="pointer-events: none;"></div>
                 </div>
-                <div class="cardText cardTextCentered cardText-first">${JE.escapeHtml(artist.name)}</div>
-                <div class="cardText cardTextCentered cardText-secondary">${JE.escapeHtml([artist.type, artist.country].filter(Boolean).join(' · '))}</div>
+                <div class="cardText cardTextCentered cardText-first">
+                    <a is="emby-linkbutton" href="#" class="jellyseerr-more-info-link"><bdi>${JE.escapeHtml(artist.name)}</bdi></a>
+                </div>
+                <div class="cardText cardTextCentered cardText-secondary jellyseerr-meta">
+                    <bdi>${JE.escapeHtml([artist.type, artist.country].filter(Boolean).join(' · '))}</bdi>
+                </div>
             </div>
         `;
 
-        // Same interaction as the movie/show cards: hovering (or, on touch,
-        // tapping once) reveals a Request button right on the card, so
-        // requesting an artist takes one click instead of opening the full
-        // overlay. The overlay above is still there for browsing an
-        // artist's albums -- clicking the card anywhere outside the button
-        // opens it.
-        const requestButton = buildRequestButton(artist.mbid);
-        card.querySelector('.je-music-card-overlay').appendChild(requestButton);
-
-        card.addEventListener('click', (e) => {
-            if (e.target.closest('.je-music-card-overlay')) return;
-            openOverlay(artist.mbid);
-        });
-        card.addEventListener('keydown', (e) => {
-            if ((e.key === 'Enter' || e.key === ' ') && !e.target.closest('.je-music-card-overlay')) {
-                e.preventDefault();
-                openOverlay(artist.mbid);
-            }
-        });
+        const cardScalable = card.querySelector('.cardScalable');
+        const imageContainer = card.querySelector('.jellyseerr-poster-image');
+        musicCardStates.set(card, { artist, cardScalable, imageContainer, overview: null, button: null });
 
         return card;
     }
@@ -341,6 +447,7 @@
         itemsContainer.setAttribute('is', 'emby-itemscontainer');
         itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider';
         results.forEach((artist) => itemsContainer.appendChild(buildSearchRowCard(artist)));
+        bindMusicCardContainer(itemsContainer);
         scroller.appendChild(itemsContainer);
         section.appendChild(scroller);
 
