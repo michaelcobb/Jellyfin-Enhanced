@@ -429,7 +429,7 @@
             <div class="cardBox cardBox-bottompadded">
                 <div class="cardScalable">
                     <div class="cardPadder cardPadder-overflowPortrait"></div>
-                    <div class="cardImageContainer coveredImage cardContent jellyseerr-poster-image${hasImage ? '' : ' je-music-poster'} focusable" style="cursor: pointer;${hasImage ? ` background-image: url("${artist.imageUrl}");` : ''}" tabindex="0">
+                    <div class="cardImageContainer coveredImage cardContent jellyseerr-poster-image${hasImage ? '' : ' je-music-poster'} focusable" style="cursor: pointer;${hasImage ? ` background-image: url('${artist.imageUrl}');` : ''}" tabindex="0">
                         ${hasImage ? '' : MUSIC_ICON}
                     </div>
                     <div class="cardOverlayContainer" style="pointer-events: none;"></div>
