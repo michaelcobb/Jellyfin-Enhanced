@@ -731,13 +731,13 @@
         card.setAttribute('data-mbid', artist.mbid);
         const posterUrl = isSafeArtistImageUrl(artist.imageUrl) ? artist.imageUrl : noPosterUrl();
         // Same meta row shape ui-cards.js's getCardTemplate uses for movie/show
-        // cards (Seerr icon + year + star rating) rather than our own
-        // type/country line, so the two rows read consistently. MusicBrainz
-        // has no numeric rating, so that slot is always "N/A"; the year is
-        // the artist's formation year (life-span.begin) when Seerr returns one.
+        // cards (Seerr icon + year) rather than our own type/country line, so
+        // the two rows read consistently. The year is the artist's formation
+        // year (life-span.begin) when Seerr returns one, "N/A" otherwise. No
+        // rating slot here -- MusicBrainz only has a rating from a single-
+        // artist lookup (never from search), so it's real only on the detail
+        // modal; a row card can't show anything but a permanent placeholder.
         const year = artist.beginYear || t('music_meta_na', 'N/A');
-        const rating = t('music_meta_na', 'N/A');
-        const icons = JE.jellyseerrUI?.icons || {};
         card.innerHTML = `
             <div class="cardBox cardBox-bottompadded">
                 <div class="cardScalable">
@@ -753,7 +753,6 @@
                 <div class="cardText cardTextCentered cardText-secondary jellyseerr-meta">
                     <img class="jellyseerr-icon-on-card" src="${JE.cdn.selfhst('svg/seerr.svg')}" alt="Seerr">
                     <bdi>${JE.escapeHtml(year)}</bdi>
-                    <div class="jellyseerr-rating">${icons.star || ''}<span>${JE.escapeHtml(rating)}</span></div>
                 </div>
             </div>
         `;
