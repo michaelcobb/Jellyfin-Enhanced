@@ -122,9 +122,16 @@
             </div>
         `).join('');
 
+        // Same button the movie/show cards use (icons, colors, pending/
+        // requested states all come from jellyseerr's own ui-styles.js,
+        // already loaded whenever Seerr integration is on) instead of a
+        // one-off modal-button look.
+        const icons = JE.jellyseerrUI?.icons || {};
+        const requestIcon = artist.alreadyAdded ? (icons.requested || icons.pending || '') : (icons.request || '');
         const requestLabel = artist.alreadyAdded
             ? t('music_requested_button', 'Already Requested')
             : t('music_request_button', 'Request');
+        const requestClass = artist.alreadyAdded ? 'jellyseerr-button-pending' : 'jellyseerr-button-request';
 
         body.innerHTML = `
             <button class="je-music-back">&larr; ${t('music_back', 'Back to search')}</button>
@@ -134,7 +141,7 @@
                     <div class="je-music-artist-meta">${JE.escapeHtml([artist.type, artist.country].filter(Boolean).join(' · '))}</div>
                 </div>
                 ${artist.canRequest
-                    ? `<button class="jellyseerr-modal-button jellyseerr-modal-button-primary" id="je-music-request" ${artist.alreadyAdded ? 'disabled' : ''}>${requestLabel}</button>`
+                    ? `<button type="button" class="jellyseerr-request-button ${requestClass}" id="je-music-request" ${artist.alreadyAdded ? 'disabled' : ''}>${requestIcon}<span>${requestLabel}</span></button>`
                     : `<span class="je-music-artist-meta">${t('music_no_lidarr', 'No Lidarr server is configured.')}</span>`}
             </div>
             <div class="je-music-albums">${albumsHtml}</div>
@@ -149,15 +156,17 @@
         if (requestButton) {
             requestButton.addEventListener('click', async () => {
                 requestButton.disabled = true;
-                requestButton.textContent = t('music_requesting', 'Requesting…');
+                requestButton.innerHTML = `<span>${t('music_requesting', 'Requesting…')}</span><span class="jellyseerr-button-spinner"></span>`;
                 try {
                     await JE.jellyseerrAPI.requestArtist(artist.mbid);
-                    requestButton.textContent = t('music_requested_button', 'Already Requested');
+                    requestButton.classList.remove('jellyseerr-button-request');
+                    requestButton.classList.add('jellyseerr-button-pending');
+                    requestButton.innerHTML = `${icons.pending || icons.requested || ''}<span>${t('music_requested_button', 'Already Requested')}</span>`;
                     JE.toast(t('music_request_success', 'Artist requested!'), 3000);
                 } catch (error) {
                     console.error('🪼 Jellyfin Enhanced: Music: request failed:', error);
                     requestButton.disabled = false;
-                    requestButton.textContent = t('music_request_button', 'Request');
+                    requestButton.innerHTML = `${icons.request || ''}<span>${t('music_request_button', 'Request')}</span>`;
                     JE.toast(t('music_request_error', 'Something went wrong requesting this artist.'), 3000);
                 }
             });
