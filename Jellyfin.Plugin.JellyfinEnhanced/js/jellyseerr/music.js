@@ -373,11 +373,9 @@
                         </svg>
                     </button>
 
-                    ${backdropUrl ? `
-                        <div class="modal-backdrop" style="background-image: url('${backdropUrl}');">
-                            <div class="je-modal-backdrop-overlay"></div>
-                        </div>
-                    ` : ''}
+                    <div class="modal-backdrop"${backdropUrl ? ` style="background-image: url('${backdropUrl}');"` : ''}>
+                        <div class="je-modal-backdrop-overlay"></div>
+                    </div>
 
                     <div class="modal-content">
                         <div class="modal-main">
