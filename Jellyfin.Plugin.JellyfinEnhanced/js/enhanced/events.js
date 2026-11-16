@@ -267,6 +267,7 @@
             JE.helpers.throttle(() => {
                 runPageSpecificFunctions();
                 JE.addRandomButton();
+                JE.addMusicButton?.();
                 JE.addUserPreferencesLink();
             }, 100),
             document.body,
@@ -393,6 +394,7 @@
         JE.addPluginMenuButton();
         JE.addUserMenuLink();
         JE.addRandomButton();
+        JE.addMusicButton?.();
         JE.applySavedStylesWhenReady();
 
         // Setup persistent listeners and observers

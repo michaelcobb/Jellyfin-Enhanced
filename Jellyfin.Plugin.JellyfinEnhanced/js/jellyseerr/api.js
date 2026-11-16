@@ -314,6 +314,47 @@
     };
 
     /**
+     * Searches MusicBrainz (via the Seerr music patch) for artists.
+     * @param {string} query
+     * @param {object} [options] - Optional settings (signal, skipCache).
+     * @returns {Promise<{results: Array<{mbid:string,name:string,type?:string,disambiguation?:string,country?:string}>}>}
+     */
+    api.musicSearch = async function(query, options = {}) {
+        try {
+            return await get(`/music/search?query=${encodeURIComponent(query)}`, options);
+        } catch (error) {
+            if (error.name === 'AbortError') throw error;
+            console.error('%s Music search failed for query "%s":', logPrefix, query, error);
+            return { results: [] };
+        }
+    };
+
+    /**
+     * Fetches an artist's details/albums and whether it's already in Lidarr.
+     * @param {string} mbid - MusicBrainz artist id.
+     * @returns {Promise<object|null>}
+     */
+    api.fetchMusicArtist = async function(mbid) {
+        try {
+            return await get(`/music/artist/${encodeURIComponent(mbid)}`);
+        } catch (error) {
+            console.error('%s Failed to fetch artist %s:', logPrefix, mbid, error);
+            return null;
+        }
+    };
+
+    /**
+     * Requests an artist: Seerr looks it up in Lidarr by MusicBrainz id and
+     * adds/monitors it there. Throws on failure -- callers should catch and
+     * surface a toast, same as the rest of this module's post() calls.
+     * @param {string} mbid - MusicBrainz artist id.
+     * @returns {Promise<any>}
+     */
+    api.requestArtist = async function(mbid) {
+        return post('/music/request', { mbid });
+    };
+
+    /**
      * Fetches collection information for a movie from TMDB via proxy
      * @param {number} tmdbId
      * @returns {Promise<{id:number,name:string,posterPath?:string,backdropPath?:string}|null>}

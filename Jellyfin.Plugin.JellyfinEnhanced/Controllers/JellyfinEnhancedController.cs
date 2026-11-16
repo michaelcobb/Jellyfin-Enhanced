@@ -1696,6 +1696,62 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest(path, HttpMethod.Get);
         }
 
+        // Music search/discover/request. Thin proxies to the Seerr-side
+        // /api/v1/music/* endpoints (a Seerr patch of its own -- see
+        // michaelcobb/seerr -- that resolves artists via MusicBrainz and
+        // requests them by handing them to the connected Lidarr server).
+        // Deliberately not wired into the Spoiler Guard auto-enable hook
+        // below JellyseerrRequest, nor into any of the movie/TV-only
+        // services (parental filter, auto-season-request, MDBList ratings,
+        // recently-added scan) -- those are all keyed off TMDB ids and a
+        // movie/tv MediaType and have no music equivalent to hang onto.
+        [HttpGet("jellyseerr/music/search")]
+        [Authorize]
+        public Task<IActionResult> JellyseerrMusicSearch([FromQuery] string? query)
+        {
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new
+                {
+                    error = true,
+                    code = "missing_query",
+                    message = "Search query is required."
+                }));
+            }
+            if (query.Length > 256)
+            {
+                var cut = 256;
+                if (cut > 0 && char.IsHighSurrogate(query[cut - 1])) cut--;
+                query = query.Substring(0, cut);
+            }
+
+            return ProxyJellyseerrRequest($"/api/v1/music/search?query={Uri.EscapeDataString(query)}", HttpMethod.Get);
+        }
+
+        [HttpGet("jellyseerr/music/artist/{mbid}")]
+        [Authorize]
+        public Task<IActionResult> JellyseerrMusicArtist(string mbid)
+        {
+            if (string.IsNullOrWhiteSpace(mbid))
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new
+                {
+                    error = true,
+                    code = "missing_mbid",
+                    message = "An artist MusicBrainz ID is required."
+                }));
+            }
+
+            return ProxyJellyseerrRequest($"/api/v1/music/artist/{Uri.EscapeDataString(mbid)}", HttpMethod.Get);
+        }
+
+        [HttpPost("jellyseerr/music/request")]
+        [Authorize]
+        public Task<IActionResult> JellyseerrMusicRequest([FromBody] JsonElement requestBody)
+        {
+            return ProxyJellyseerrRequest("/api/v1/music/request", HttpMethod.Post, requestBody.ToString());
+        }
+
         [HttpGet("jellyseerr/sonarr")]
         [Authorize]
         public Task<IActionResult> GetSonarrInstances()
