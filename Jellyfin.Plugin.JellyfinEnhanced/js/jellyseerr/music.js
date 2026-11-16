@@ -25,6 +25,14 @@
         return translated === key ? fallback : translated;
     }
 
+    // Mirrors ui-cards.js's isSafeTmdbImagePath: artist.imageUrl is server
+    // data (proxied from Fanart.tv), but it still gets interpolated into a
+    // CSS url() below -- reject anything that isn't a plain https URL with
+    // no quotes/parens that could break out of that context.
+    function isSafeArtistImageUrl(url) {
+        return typeof url === 'string' && /^https:\/\/[^\s"'()]+$/.test(url);
+    }
+
     function injectStyles() {
         if (document.getElementById(STYLE_ID) || !document.head) return;
         const style = document.createElement('style');
@@ -40,13 +48,21 @@
             .je-music-close:hover { color: #e2e8f0; }
             .je-music-body { padding: 20px; overflow-y: auto; flex: 1; }
             .je-music-results { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
-            .je-music-result { text-align: left; background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(148, 163, 184, 0.15); border-radius: 8px; padding: 12px 14px; cursor: pointer; color: #e2e8f0; }
+            .je-music-result { display: flex; align-items: center; gap: 10px; text-align: left; background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(148, 163, 184, 0.15); border-radius: 8px; padding: 12px 14px; cursor: pointer; color: #e2e8f0; }
             .je-music-result:hover { background: rgba(51, 65, 85, 0.8); }
+            .je-music-result-thumb { width: 36px; height: 36px; flex-shrink: 0; border-radius: 50%; object-fit: cover; background: linear-gradient(135deg, #312e81, #7c3aed); display: flex; align-items: center; justify-content: center; color: rgba(255, 255, 255, 0.85); }
+            .je-music-result-thumb svg { width: 55%; height: 55%; }
+            .je-music-result-text { display: flex; flex-direction: column; min-width: 0; }
             .je-music-result-name { font-weight: 600; display: block; }
             .je-music-result-meta { color: #94a3b8; font-size: 0.8rem; text-transform: uppercase; }
             .je-music-empty, .je-music-loading { color: #94a3b8; padding: 24px 0; text-align: center; }
             .je-music-back { background: none; border: none; color: #a5b4fc; cursor: pointer; padding: 0; margin-bottom: 12px; font-size: 0.9rem; }
+            .je-music-backdrop { position: relative; margin: -20px -20px 16px; height: 160px; overflow: hidden; }
+            .je-music-backdrop img { width: 100%; height: 100%; object-fit: cover; }
+            .je-music-backdrop::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(15,23,42,0) 40%, rgba(15,23,42,1) 100%); }
             .je-music-artist-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+            .je-music-artist-header-main { display: flex; align-items: center; gap: 14px; }
+            .je-music-artist-thumb { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; flex-shrink: 0; box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.3); }
             .je-music-artist-name { font-size: 1.4rem; font-weight: 700; margin: 0; }
             .je-music-artist-meta { color: #94a3b8; font-size: 0.85rem; text-transform: uppercase; margin-top: 4px; }
             .je-music-albums { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
@@ -139,8 +155,13 @@
 
             resultsEl.innerHTML = results.map((artist) => `
                 <button class="je-music-result" data-mbid="${JE.escapeHtml(artist.mbid)}">
-                    <span class="je-music-result-name">${JE.escapeHtml(artist.name)}</span>
-                    <span class="je-music-result-meta">${JE.escapeHtml([artist.type, artist.country].filter(Boolean).join(' · '))}</span>
+                    ${artist.imageUrl
+                        ? `<img class="je-music-result-thumb" src="${JE.escapeHtml(artist.imageUrl)}" alt="" loading="lazy">`
+                        : `<span class="je-music-result-thumb">${MUSIC_ICON}</span>`}
+                    <span class="je-music-result-text">
+                        <span class="je-music-result-name">${JE.escapeHtml(artist.name)}</span>
+                        <span class="je-music-result-meta">${JE.escapeHtml([artist.type, artist.country].filter(Boolean).join(' · '))}</span>
+                    </span>
                 </button>
             `).join('');
 
@@ -170,11 +191,19 @@
         `).join('');
 
         body.innerHTML = `
+            ${artist.backgroundUrl ? `
+                <div class="je-music-backdrop">
+                    <img src="${JE.escapeHtml(artist.backgroundUrl)}" alt="">
+                </div>
+            ` : ''}
             <button class="je-music-back">&larr; ${t('music_back', 'Back to search')}</button>
             <div class="je-music-artist-header">
-                <div>
-                    <h3 class="je-music-artist-name">${JE.escapeHtml(artist.name)}</h3>
-                    <div class="je-music-artist-meta">${JE.escapeHtml([artist.type, artist.country].filter(Boolean).join(' · '))}</div>
+                <div class="je-music-artist-header-main">
+                    ${artist.imageUrl ? `<img class="je-music-artist-thumb" src="${JE.escapeHtml(artist.imageUrl)}" alt="">` : ''}
+                    <div>
+                        <h3 class="je-music-artist-name">${JE.escapeHtml(artist.name)}</h3>
+                        <div class="je-music-artist-meta">${JE.escapeHtml([artist.type, artist.country].filter(Boolean).join(' · '))}</div>
+                    </div>
                 </div>
                 <span class="je-music-request-slot"></span>
             </div>
@@ -395,12 +424,13 @@
         const card = document.createElement('div');
         card.className = 'card overflowPortraitCard card-hoverable card-withuserdata jellyseerr-card';
         card.setAttribute('data-mbid', artist.mbid);
+        const hasImage = isSafeArtistImageUrl(artist.imageUrl);
         card.innerHTML = `
             <div class="cardBox cardBox-bottompadded">
                 <div class="cardScalable">
                     <div class="cardPadder cardPadder-overflowPortrait"></div>
-                    <div class="cardImageContainer coveredImage cardContent jellyseerr-poster-image je-music-poster focusable" style="cursor: pointer;" tabindex="0">
-                        ${MUSIC_ICON}
+                    <div class="cardImageContainer coveredImage cardContent jellyseerr-poster-image${hasImage ? '' : ' je-music-poster'} focusable" style="cursor: pointer;${hasImage ? ` background-image: url("${artist.imageUrl}");` : ''}" tabindex="0">
+                        ${hasImage ? '' : MUSIC_ICON}
                     </div>
                     <div class="cardOverlayContainer" style="pointer-events: none;"></div>
                 </div>
