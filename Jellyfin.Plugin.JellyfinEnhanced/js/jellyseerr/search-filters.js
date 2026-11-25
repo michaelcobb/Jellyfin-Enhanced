@@ -26,6 +26,19 @@
     // Empty set = no filter applied, everything shows (the default state).
     const activeTypes = new Set();
 
+    // JE.t(key, params) treats a truthy second argument as a params object
+    // for {placeholder} substitution (Object.entries on it) -- passing a
+    // plain fallback string there makes it iterate the string's characters
+    // as numeric keys and build `new RegExp('{0}', 'g')`, which throws
+    // (invalid regex, nothing to repeat). JE.t(key) alone already falls
+    // back to the key itself when untranslated, so just call it with one
+    // argument and swap in our own fallback text locally -- same wrapper
+    // music.js uses for the same reason.
+    function t(key, fallback) {
+        const translated = typeof JE.t === 'function' ? JE.t(key) : key;
+        return translated === key ? fallback : translated;
+    }
+
     const TYPE_ORDER = ['movie', 'series', 'song', 'album', 'artist'];
     const TYPE_LABEL_KEYS = {
         movie: ['search_filter_movies', 'Movies'],
@@ -116,7 +129,7 @@
             const chip = document.createElement('button');
             chip.type = 'button';
             chip.className = 'je-search-filter-chip';
-            chip.textContent = JE.t(key, fallback);
+            chip.textContent = t(key, fallback);
             chip.dataset.type = type;
             chip.addEventListener('click', () => {
                 if (activeTypes.has(type)) {
