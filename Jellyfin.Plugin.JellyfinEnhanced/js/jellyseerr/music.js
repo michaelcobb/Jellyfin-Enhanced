@@ -545,26 +545,20 @@
         card.className = 'card overflowPortraitCard card-hoverable card-withuserdata jellyseerr-card';
         card.setAttribute('data-mbid', artist.mbid);
         const posterUrl = isSafeArtistImageUrl(artist.imageUrl) ? artist.imageUrl : noPosterUrl();
-        // Seerr's /search now fans out to MusicBrainz's artist, album
-        // (release-group), and song (recording) endpoints and resolves every
-        // hit down to one artist-shaped result (see music.ts) -- the request
-        // flow is still always "add this whole artist to Lidarr", so the
-        // card is still one artist card either way. matchType says which
-        // search actually found it; for an album/song match matchTitle is
-        // the thing that matched, which is more useful here than the
-        // artist's formation year (MusicBrainz's album/song search doesn't
-        // return life-span, so beginYear is never set in that case anyway).
-        const badgeText =
-            artist.matchType === 'song' ? t('music_card_badge_song', 'Song') :
-            artist.matchType === 'album' ? t('music_card_badge_album', 'Album') :
-            t('music_card_badge', 'Artist');
-        const metaText = artist.matchTitle || artist.beginYear || t('music_meta_na', 'N/A');
+        // Same meta row shape ui-cards.js's getCardTemplate uses for movie/show
+        // cards (Seerr icon + year) rather than our own type/country line, so
+        // the two rows read consistently. The year is the artist's formation
+        // year (life-span.begin) when Seerr returns one, "N/A" otherwise. No
+        // rating slot here -- MusicBrainz only has a rating from a single-
+        // artist lookup (never from search), so it's real only on the detail
+        // modal; a row card can't show anything but a permanent placeholder.
+        const year = artist.beginYear || t('music_meta_na', 'N/A');
         card.innerHTML = `
             <div class="cardBox cardBox-bottompadded">
                 <div class="cardScalable">
                     <div class="cardPadder cardPadder-overflowPortrait"></div>
                     <div class="cardImageContainer coveredImage cardContent jellyseerr-poster-image focusable" style="cursor: pointer; background-image: url('${posterUrl}');" tabindex="0">
-                        <div class="jellyseerr-media-badge jellyseerr-media-badge-music">${JE.escapeHtml(badgeText)}</div>
+                        <div class="jellyseerr-media-badge jellyseerr-media-badge-music">${JE.escapeHtml(t('music_card_badge', 'Music'))}</div>
                     </div>
                     <div class="cardOverlayContainer" style="pointer-events: none;"></div>
                 </div>
@@ -573,7 +567,7 @@
                 </div>
                 <div class="cardText cardTextCentered cardText-secondary jellyseerr-meta">
                     <img class="jellyseerr-icon-on-card" src="${JE.cdn.selfhst('svg/seerr.svg')}" alt="Seerr">
-                    <bdi>${JE.escapeHtml(metaText)}</bdi>
+                    <bdi>${JE.escapeHtml(year)}</bdi>
                 </div>
             </div>
         `;
