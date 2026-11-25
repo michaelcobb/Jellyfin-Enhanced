@@ -11,6 +11,14 @@
       {
         "changelog": "Custom build with music discovery added to the Seerr integration: artist search, a detail modal, and one-click Lidarr requesting.",
         "targetAbi": "12.0.0.0",
+        "version": "12.16.0.4",
+        "sourceUrl": "https://github.com/michaelcobb/Jellyfin-Enhanced/releases/download/music-discovery-12.16.0.4/Jellyfin.Plugin.JellyfinEnhanced_music-discovery.zip",
+        "checksum": "97CB13D7803430FFC134315899EB6C13",
+        "timestamp": "2026-11-25T13:57:53"
+      },
+      {
+        "changelog": "Custom build with music discovery added to the Seerr integration: artist search, a detail modal, and one-click Lidarr requesting.",
+        "targetAbi": "12.0.0.0",
         "version": "12.16.0.3",
         "sourceUrl": "https://github.com/michaelcobb/Jellyfin-Enhanced/releases/download/music-discovery-12.16.0.3/Jellyfin.Plugin.JellyfinEnhanced_music-discovery.zip",
         "checksum": "07617C52EAAF88F1411DE28B068E7C6A",
